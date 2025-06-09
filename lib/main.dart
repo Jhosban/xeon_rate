@@ -584,7 +584,7 @@ class CurrencyService {
         if (data['result'] == 'success') {
           final rate = data['conversion_rate'];
           final result = amount * rate;
-          print('Resultado desde API: $result');
+          
           return result;
         }
       }
