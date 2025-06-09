@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,6 +40,9 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
   String defaultLanguage = 'es';
   bool languageLoaded = false;
 
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _wasOffline = false;
+
   final Map<String, Map<String, String>> appTexts = {
     'es': {
       'title': 'Convertidor de Divisas',
@@ -67,14 +71,43 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
     fromCurrency = currencies[0];
     toCurrency = currencies[1];
     loadLanguage();
+
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      final isOffline = results.every((result) => result == ConnectivityResult.none);
+      if (isOffline && !_wasOffline) {
+        _showSnackBar(
+          appTexts[defaultLanguage]?['defaultWarning'] ??
+              'Sin conexión a Internet. Se usaron tasas aproximadas.',
+        );
+      }
+      _wasOffline = isOffline;
+    });
+
   }
 
+    @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    amountController.dispose();
+    super.dispose();
+  }
   Future<void> loadLanguage() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
       defaultLanguage = prefs.getString('language') ?? 'es';
       languageLoaded = true;
     });
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   Future<void> changeLanguage(String newLang) async {
@@ -101,6 +134,12 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
       fromCurrency: fromCurrency!,
       toCurrency: toCurrency!,
     );
+
+    // void _showSnackBar(String message) {
+    //   ScaffoldMessenger.of(
+    //     context,
+    //   ).showSnackBar(SnackBar(content: Text(message)));
+    // }
 
     setState(() {
       convertedResult = result;
@@ -503,6 +542,7 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
   }
 }
 
+// Servicio para conversión de monedas
 class CurrencyService {
   static const String _apiKey = 'cb4f8b24f9d7dbe5eb2dab34';
   static const String _baseUrl = 'https://v6.exchangerate-api.com/v6';
@@ -519,14 +559,32 @@ class CurrencyService {
     required String fromCurrency,
     required String toCurrency,
   }) async {
+    print('Iniciando conversión: $amount $fromCurrency a $toCurrency');
+
     try {
-      if (fromCurrency == toCurrency) return amount;
+      if (fromCurrency == toCurrency) {
+        print('Monedas iguales, resultado: $amount');
+        return amount;
+      }
 
       final connectivity = await Connectivity().checkConnectivity();
       if (connectivity == ConnectivityResult.none) {
-        return amount * (_defaultRates[toCurrency] ?? 1.0);
+        print('Sin conexión. Usando tasas aproximadas.');
+
+        if (_defaultRates.containsKey(fromCurrency) &&
+            _defaultRates.containsKey(toCurrency)) {
+          final fromRate = _defaultRates[fromCurrency]!;
+          final toRate = _defaultRates[toCurrency]!;
+          final result = amount * (toRate / fromRate);
+          print('Resultado aproximado: $result');
+
+          return result;
+        } else {
+          throw 'Tasas por defecto no disponibles para $fromCurrency o $toCurrency';
+        }
       }
 
+      // Conexión disponible: utiliza el API
       final response = await http.get(
         Uri.parse('$_baseUrl/$_apiKey/pair/$fromCurrency/$toCurrency'),
       );
@@ -534,13 +592,36 @@ class CurrencyService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['result'] == 'success') {
-          return amount * data['conversion_rate'];
+          final rate = data['conversion_rate'];
+          final result = amount * rate;
+          print('Resultado desde API: $result');
+          return result;
         }
       }
 
-      return amount * (_defaultRates[toCurrency] ?? 1.0);
+      //Si falla la API, usa las tasas por defecto
+      print('Fallo API. Usando tasas aproximadas.');
+      if (_defaultRates.containsKey(fromCurrency) &&
+          _defaultRates.containsKey(toCurrency)) {
+        final fromRate = _defaultRates[fromCurrency]!;
+        final toRate = _defaultRates[toCurrency]!;
+        final result = amount * (toRate / fromRate);
+        print('Resultado aproximado: $result');
+        return result;
+      } else {
+        throw 'Tasas por defecto no disponibles para $fromCurrency o $toCurrency';
+      }
     } catch (e) {
-      return amount * (_defaultRates[toCurrency] ?? 1.0);
+      print('Error en la conversión: $e');
+      if (_defaultRates.containsKey(fromCurrency) &&
+          _defaultRates.containsKey(toCurrency)) {
+        final fromRate = _defaultRates[fromCurrency]!;
+        final toRate = _defaultRates[toCurrency]!;
+        final result = amount * (toRate / fromRate);
+        print('Resultado aproximado después del error: $result');
+        return result;
+      }
     }
+    throw 'Error al convertir';
   }
 }
