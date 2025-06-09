@@ -135,12 +135,6 @@ class _CurrencyConverterScreenState extends State<CurrencyConverterScreen> {
       toCurrency: toCurrency!,
     );
 
-    // void _showSnackBar(String message) {
-    //   ScaffoldMessenger.of(
-    //     context,
-    //   ).showSnackBar(SnackBar(content: Text(message)));
-    // }
-
     setState(() {
       convertedResult = result;
       isLoading = false;
@@ -559,24 +553,20 @@ class CurrencyService {
     required String fromCurrency,
     required String toCurrency,
   }) async {
-    print('Iniciando conversión: $amount $fromCurrency a $toCurrency');
 
     try {
       if (fromCurrency == toCurrency) {
-        print('Monedas iguales, resultado: $amount');
         return amount;
       }
 
       final connectivity = await Connectivity().checkConnectivity();
       if (connectivity == ConnectivityResult.none) {
-        print('Sin conexión. Usando tasas aproximadas.');
 
         if (_defaultRates.containsKey(fromCurrency) &&
             _defaultRates.containsKey(toCurrency)) {
           final fromRate = _defaultRates[fromCurrency]!;
           final toRate = _defaultRates[toCurrency]!;
           final result = amount * (toRate / fromRate);
-          print('Resultado aproximado: $result');
 
           return result;
         } else {
@@ -600,25 +590,21 @@ class CurrencyService {
       }
 
       //Si falla la API, usa las tasas por defecto
-      print('Fallo API. Usando tasas aproximadas.');
       if (_defaultRates.containsKey(fromCurrency) &&
           _defaultRates.containsKey(toCurrency)) {
         final fromRate = _defaultRates[fromCurrency]!;
         final toRate = _defaultRates[toCurrency]!;
         final result = amount * (toRate / fromRate);
-        print('Resultado aproximado: $result');
         return result;
       } else {
         throw 'Tasas por defecto no disponibles para $fromCurrency o $toCurrency';
       }
     } catch (e) {
-      print('Error en la conversión: $e');
       if (_defaultRates.containsKey(fromCurrency) &&
           _defaultRates.containsKey(toCurrency)) {
         final fromRate = _defaultRates[fromCurrency]!;
         final toRate = _defaultRates[toCurrency]!;
         final result = amount * (toRate / fromRate);
-        print('Resultado aproximado después del error: $result');
         return result;
       }
     }
